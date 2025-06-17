@@ -81,12 +81,12 @@ if uploaded_file:
         y_pred = model.predict(X_test)
 
         acc = accuracy_score(y_test, y_pred)
-        st.write(f"🔍 Accuracy: {acc:.4f}")
+        st.write(f"Accuracy: {acc:.4f}")
 
-        st.write("📉 Confusion Matrix:")
+        st.write("Confusion Matrix:")
         st.text(confusion_matrix(y_test, y_pred))
 
-        st.write("📄 Classification Report:")
+        st.write("Classification Report:")
         st.text(classification_report(y_test, y_pred))
 
     with tab4:
