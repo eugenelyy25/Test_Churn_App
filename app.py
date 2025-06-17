@@ -1,100 +1,105 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
 import seaborn as sns
+import matplotlib.pyplot as plt
+
 from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import classification_report, confusion_matrix
+from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
 from imblearn.over_sampling import SMOTE
 
-st.set_page_config(layout="wide")
-st.title("Customer Churn Prediction App")
+from sklearn.preprocessing import LabelEncoder
+from sklearn.feature_selection import SelectFromModel
 
-# Load data
+st.set_page_config(layout="wide", page_title="Telco Churn Analysis")
+
+st.title("Telco Customer Churn Prediction")
+
+# Sidebar file uploader
+uploaded_file = st.file_uploader("Upload Telco-Customer-Churn.csv", type=["csv"])
+
 @st.cache_data
-def load_data():
-    df = pd.read_csv("Telco-Customer-Churn.csv")
+def load_data(file):
+    df = pd.read_csv(file)
     return df
 
-df = load_data()
+if uploaded_file:
+    df = load_data(uploaded_file)
 
-# Preprocessing
-@st.cache_data
-def preprocess_data(df):
-    df = df.drop(['customerID'], axis=1)
-    df['TotalCharges'] = pd.to_numeric(df['TotalCharges'], errors='coerce')
-    df = df.dropna()
-    df['Churn'] = df['Churn'].map({'Yes':1, 'No':0})
-    df_dummies = pd.get_dummies(df.drop('Churn', axis=1), drop_first=True)
-    return df_dummies, df['Churn']
+    tab1, tab2, tab3, tab4 = st.tabs(["Data Overview", "⚙Preprocessing", "Logistic Regression", "Feature Importance"])
 
-X, y = preprocess_data(df)
+    with tab1:
+        st.subheader("Raw Data")
+        st.dataframe(df.head())
+        st.write("Shape:", df.shape)
 
-# Tabs
-tab1, tab2, tab3, tab4 = st.tabs(["Exploration", "Modeling", "Top 10 Features", "Feature Group Summary"])
+        st.subheader("Churn Distribution")
+        churn_counts = df["Churn"].value_counts()
+        fig, ax = plt.subplots()
+        sns.barplot(x=churn_counts.index, y=churn_counts.values, palette="pastel", ax=ax)
+        st.pyplot(fig)
 
-# Tab 1: Exploration
-with tab1:
-    st.subheader("Raw Data")
-    st.dataframe(df.head())
+    with tab2:
+        st.subheader("Encoding and Cleaning")
 
-# Tab 2: Modeling
-with tab2:
-    st.subheader("Train Logistic Regression Model with SMOTE")
-    test_size = st.slider("Test size (%)", 10, 50, 30)
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size/100, random_state=42)
+        df_clean = df.copy()
+        df_clean.replace(" ", np.nan, inplace=True)
+        df_clean.dropna(inplace=True)
 
-    sm = SMOTE(random_state=42)
-    X_res, y_res = sm.fit_resample(X_train, y_train)
+        # Drop customerID
+        df_clean.drop("customerID", axis=1, inplace=True)
 
-    model = LogisticRegression(max_iter=1000)
-    model.fit(X_res, y_res)
+        # Encode target
+        df_clean["Churn"] = df_clean["Churn"].map({"Yes": 1, "No": 0})
 
-    y_pred = model.predict(X_test)
-    st.text("Classification Report")
-    st.text(classification_report(y_test, y_pred))
-    st.text("Confusion Matrix")
-    st.write(confusion_matrix(y_test, y_pred))
+        # Binary encode Yes/No features
+        for col in df_clean.columns:
+            if df_clean[col].nunique() == 2 and df_clean[col].dtype == "object":
+                df_clean[col] = df_clean[col].map({"Yes": 1, "No": 0})
 
-# Tab 3: Top 10 Features
-with tab3:
-    st.subheader("Top 10 Important Features (Logistic Regression Coefficients)")
-    coef_df = pd.DataFrame({"Feature": X.columns, "Coefficient": model.coef_[0]})
-    coef_df["AbsCoefficient"] = coef_df["Coefficient"].abs()
-    top10 = coef_df.sort_values("AbsCoefficient", ascending=False).head(10)
-    st.dataframe(top10, use_container_width=True)
+        # One-hot encode remaining categorical features
+        df_encoded = pd.get_dummies(df_clean)
 
-    # Plot
-    fig, ax = plt.subplots()
-    sns.barplot(data=top10, x="AbsCoefficient", y="Feature", palette="viridis", ax=ax)
-    ax.set_title("Top 10 Features by Absolute Coefficient")
-    st.pyplot(fig)
+        st.write("Encoded Data Shape:", df_encoded.shape)
+        st.dataframe(df_encoded.head())
 
-# Tab 4: Grouped Feature Importance
-with tab4:
-    st.subheader("Grouped Feature Importance from Logistic Regression")
+    with tab3:
+        st.subheader("Logistic Regression with SMOTE")
 
-    coef_df = pd.DataFrame({
-        "Feature": X.columns,
-        "Coefficient": model.coef_[0]
-    })
-    coef_df["Group"] = coef_df["Feature"].apply(lambda x: x.split('_')[0])
+        X = df_encoded.drop("Churn", axis=1)
+        y = df_encoded["Churn"]
 
-    grouped = (
-        coef_df.groupby("Group")
-        .agg(
-            MeanAbsCoefficient=("Coefficient", lambda x: np.mean(np.abs(x))),
-            MaxAbsCoefficient=("Coefficient", lambda x: np.max(np.abs(x))),
-            SumAbsCoefficient=("Coefficient", lambda x: np.sum(np.abs(x))),
-            Count=("Coefficient", "count")
-        )
-        .sort_values("MeanAbsCoefficient", ascending=False)
-    )
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.25, random_state=42)
 
-    st.dataframe(grouped.style.background_gradient(cmap='Blues'), use_container_width=True)
+        sm = SMOTE(random_state=42)
+        X_res, y_res = sm.fit_resample(X_train, y_train)
 
-    fig, ax = plt.subplots(figsize=(10, 6))
-    sns.barplot(data=grouped.reset_index(), x="MeanAbsCoefficient", y="Group", palette="Blues_r", ax=ax)
-    ax.set_title("Grouped Feature Importance (Mean Abs Coefficient)")
-    st.pyplot(fig)
+        model = LogisticRegression(max_iter=1000)
+        model.fit(X_res, y_res)
+
+        y_pred = model.predict(X_test)
+
+        acc = accuracy_score(y_test, y_pred)
+        st.write(f"🔍 Accuracy: {acc:.4f}")
+
+        st.write("📉 Confusion Matrix:")
+        st.text(confusion_matrix(y_test, y_pred))
+
+        st.write("📄 Classification Report:")
+        st.text(classification_report(y_test, y_pred))
+
+    with tab4:
+        st.subheader("Top 10 Most Important Features")
+
+        feature_importance = pd.Series(np.abs(model.coef_[0]), index=X.columns)
+        top10 = feature_importance.sort_values(ascending=False).head(10)
+
+        fig, ax = plt.subplots()
+        sns.barplot(x=top10.values, y=top10.index, palette="Blues_r", ax=ax)
+        ax.set_xlabel("Absolute Coefficient")
+        ax.set_title("Top 10 Logistic Regression Features")
+        st.pyplot(fig)
+
+else:
+    st.warning("Please upload Telco-Customer-Churn.csv to start.")
