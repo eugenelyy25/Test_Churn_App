@@ -40,29 +40,42 @@ if uploaded_file:
         sns.barplot(x=churn_counts.index, y=churn_counts.values, palette="pastel", ax=ax)
         st.pyplot(fig)
 
-    with tab2:
-        st.subheader("Encoding and Cleaning")
+with tab2:
+    st.subheader("Encoding and Cleaning")
 
-        df_clean = df.copy()
-        df_clean.replace(" ", np.nan, inplace=True)
-        df_clean.dropna(inplace=True)
+    df_clean = df.copy()
 
-        # Drop customerID
-        df_clean.drop("customerID", axis=1, inplace=True)
+    # Convert all blanks to NaN
+    df_clean.replace(" ", np.nan, inplace=True)
 
-        # Encode target
-        df_clean["Churn"] = df_clean["Churn"].map({"Yes": 1, "No": 0})
+    # Drop rows with any NaN
+    df_clean.dropna(inplace=True)
 
-        # Binary encode Yes/No features
-        for col in df_clean.columns:
-            if df_clean[col].nunique() == 2 and df_clean[col].dtype == "object":
-                df_clean[col] = df_clean[col].map({"Yes": 1, "No": 0})
+    # Drop customerID
+    df_clean.drop("customerID", axis=1, inplace=True)
 
-        # One-hot encode remaining categorical features
-        df_encoded = pd.get_dummies(df_clean)
+    # Convert TotalCharges to numeric (in case it's object due to blanks)
+    df_clean["TotalCharges"] = pd.to_numeric(df_clean["TotalCharges"], errors="coerce")
+    df_clean.dropna(inplace=True)  # Drop again if conversion introduced NaNs
 
-        st.write("Encoded Data Shape:", df_encoded.shape)
-        st.dataframe(df_encoded.head())
+    # Encode target
+    df_clean["Churn"] = df_clean["Churn"].map({"Yes": 1, "No": 0})
+
+    # Binary encode Yes/No features
+    for col in df_clean.columns:
+        if df_clean[col].nunique() == 2 and df_clean[col].dtype == "object":
+            df_clean[col] = df_clean[col].map({"Yes": 1, "No": 0})
+
+    # One-hot encode remaining categorical features
+    df_encoded = pd.get_dummies(df_clean)
+
+    # Final safety check for NaNs
+    df_encoded.dropna(inplace=True)
+
+    st.write("No missing values left:", df_encoded.isnull().sum().sum() == 0)
+    st.write("Encoded Data Shape:", df_encoded.shape)
+    st.dataframe(df_encoded.head())
+
 
     with tab3:
         st.subheader("Logistic Regression with SMOTE")
